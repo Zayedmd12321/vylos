@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: ./backend/Dockerfile
+    container_name: vylos-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./projects:/app/projects
+    environment:
+      # This is the path on your Windows machine (D:/projects/vylos/projects)
+      - HOST_PROJECTS_PATH=D:/projects/vylos/projects
+    networks:
+      - vylos_network
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./my_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - vylos_network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./projects:/var/www/html
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - vylos_network
+
+networks:
+  vylos_network:
+    driver: bridge

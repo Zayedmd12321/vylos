@@ -1,24 +1,33 @@
-from fastapi import FastAPI, BackgroundTasks, Depends
+from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import models
 from pydantic import BaseModel
 import docker
 import os
 import shutil
-from database import engine, SessionLocal # <--- Added SessionLocal
+from database import engine, SessionLocal
+from config import settings
+from auth import router as auth_router, get_current_user
 
-# 1. Database Setup
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 client = docker.from_env()
 
-# --- Pydantic Models ---
+app.include_router(auth_router)
+
 class DeployRequest(BaseModel):
     git_url: str
     project_id: str
 
-# --- Dependency ---
 def get_db():
     db = SessionLocal()
     try:
@@ -26,65 +35,41 @@ def get_db():
     finally:
         db.close()
 
-# --- STARTUP EVENT (Fixes the owner_id=1 crash) ---
-@app.on_event("startup")
-def create_dummy_user():
-    db = SessionLocal()
-    try:
-        # Check if user exists
-        user = db.query(models.User).filter(models.User.email == "test@vylos.com").first()
-        if not user:
-            print("👤 Creating dummy user (ID=1) for testing...")
-            dummy_user = models.User(
-                email="test@vylos.com", 
-                hashed_password="fake_hash", 
-                is_active=True
-            )
-            db.add(dummy_user)
-            db.commit()
-            print(f"✅ Dummy user created: ID={dummy_user.id}")
-    except Exception as e:
-        print(f"⚠️ Warning creating user: {e}")
-    finally:
-        db.close()
-
-# --- THE REAL-TIME DEPLOY WORKER ---
-def run_deploy(git_url: str, project_id: str):
+def run_deploy(git_url: str, project_id: str, user_id: int):
     db = SessionLocal()
     print("\n" + "="*50)
-    print(f"🚀 [START] Real-time Build for: {project_id}")
+    print(f"[START] Real-time Build for: {project_id}")
     print("="*50)
-
-    container = None 
+    container = None
 
     try:
-        # 1. DATABASE: Get or Create Project
+        # 1. Create/Update Project with REAL User ID
         project = db.query(models.Project).filter(models.Project.name == project_id).first()
         if not project:
-            # We use owner_id=1 which we created in startup
-            project = models.Project(name=project_id, git_url=git_url, status="Building", owner_id=1)
+            project = models.Project(
+                name=project_id, 
+                git_url=git_url, 
+                status="Building", 
+                owner_id=user_id
+            )
             db.add(project)
         else:
-            project.status = "Building"
+            setattr(project, 'status', "Building")
         db.commit()
 
-        # 2. FILESYSTEM SETUP
         internal_work_dir = f"/app/projects/{project_id}"
-        # Make sure this env var matches your docker-compose volume path!
-        host_base_path = os.getenv("HOST_PROJECTS_PATH", "D:/projects/vylos/backend/projects")
-        host_work_dir = f"{host_base_path}/{project_id}"
+        host_work_dir = f"{settings.HOST_PROJECTS_PATH}/{project_id}"
 
         if os.path.exists(internal_work_dir):
             shutil.rmtree(internal_work_dir)
         os.makedirs(internal_work_dir, exist_ok=True)
 
-        # 3. BUILD COMMAND
         build_cmd = (
             f'sh -c "apk add --no-cache git && '
             f'git clone --depth 1 {git_url} /app && '
             f'cd /app && '
             f'if [ -f package.json ]; then '
-            f'  echo \\"Node.js project detected!\\" && '
+            f'  echo \\"React project detected!\\" && '
             f'  npm install && npm run build && '
             f'  for dir in dist build out public; do '
             f'    if [ -d \\"$dir\\" ]; then '
@@ -97,7 +82,6 @@ def run_deploy(git_url: str, project_id: str):
             f'fi"'
         )
 
-        # 4. RUN DOCKER & STREAM LOGS
         container = client.containers.run(
             image="node:18-alpine",
             command=build_cmd,
@@ -105,42 +89,46 @@ def run_deploy(git_url: str, project_id: str):
             detach=True
         )
 
+        print("\n--- BUILD LOGS ---")
         for line in container.logs(stream=True, follow=True):
             print(f"[{project_id}] {line.decode('utf-8').strip()}")
 
-        # 5. CHECK SUCCESS
         result = container.wait()
-        exit_code = result.get('StatusCode', 1)
-
-        if exit_code == 0:
-            print(f"✅ [SUCCESS] Build finished.")
-            project.status = "Live"
-            project.domain = f"{project_id}.localhost"
+        if result.get('StatusCode', 1) == 0:
+            print(f"[SUCCESS] Build finished.")
+            setattr(project, 'status', "Live")
+            setattr(project, 'domain', f"{project_id}.localhost")
         else:
-            raise Exception(f"Container exited with code {exit_code}")
-
+            raise Exception("Container exited with error code")
         db.commit()
 
     except Exception as e:
-        print(f"❌ [ERROR] Deployment failed: {e}")
-        project.status = "Failed"
-        db.commit()
-    
+        print(f"[ERROR] Deployment failed: {e}")
+        if project is not None:
+            setattr(project, 'status', "Failed")
+            db.commit()
     finally:
         if container:
-            try:
-                container.remove(force=True)
-                print("🧹 [CLEANUP] Builder removed.")
-            except:
-                pass
+            try: container.remove(force=True)
+            except: pass
         db.close()
         print("="*50 + "\n")
 
-# --- ENDPOINT ---
 @app.post("/deploy")
-async def deploy(request: DeployRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    background_tasks.add_task(run_deploy, request.git_url, request.project_id)
+async def deploy(
+    request: DeployRequest, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    existing = db.query(models.Project).filter(models.Project.name == request.project_id).first()
+    if existing is not None and existing.owner_id != current_user.id:
+         raise HTTPException(status_code=400, detail="Project name already taken")
+
+    background_tasks.add_task(run_deploy, request.git_url, request.project_id, current_user.id)
+    
     return {
         "status": "Queued", 
-        "message": f"Deployment started for {request.project_id}."
+        "message": f"Deployment started for {request.project_id}",
+        "user": current_user.email
     }

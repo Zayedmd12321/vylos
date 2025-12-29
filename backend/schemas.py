@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime
 
@@ -31,6 +31,22 @@ class User(UserBase):
     id: int
     is_active: bool
     projects: List[Project] = []
-
+    username: Optional[str] = None
+    full_name: Optional[str] = None
     class Config:
         from_attributes = True
+        
+# --- Auth Schemas ---
+class UserSignup(BaseModel):
+    full_name: str
+    username: str
+    email: EmailStr
+    password: str
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str

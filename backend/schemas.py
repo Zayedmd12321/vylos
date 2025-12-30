@@ -50,3 +50,14 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    
+# --- Deployment Schemas ---
+class DeploymentResponse(BaseModel):
+    id: int
+    status: str
+    commit_message: Optional[str]
+    duration_seconds: Optional[int]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

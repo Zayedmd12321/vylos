@@ -109,6 +109,7 @@ async def login_github():
 @router.get("/auth/github/callback")
 async def auth_callback(code: str, db: Session = Depends(get_db)):
     async with httpx.AsyncClient() as client:
+        # 1. Exchange Code for Token
         token_res = await client.post(
             "https://github.com/login/oauth/access_token",
             headers={"Accept": "application/json"},
@@ -124,7 +125,15 @@ async def auth_callback(code: str, db: Session = Depends(get_db)):
         if not access_token:
             raise HTTPException(status_code=400, detail="Invalid code from GitHub")
 
-        # Fetch User Info
+        # 2. Fetch User Profile (New: Get Avatar)
+        user_res = await client.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        user_profile = user_res.json()
+        avatar_url = user_profile.get("avatar_url")
+
+        # 3. Fetch Emails
         email_res = await client.get(
             "https://api.github.com/user/emails",
             headers={"Authorization": f"Bearer {access_token}"},
@@ -135,18 +144,30 @@ async def auth_callback(code: str, db: Session = Depends(get_db)):
         if not primary_email:
             raise HTTPException(status_code=400, detail="No primary email found")
 
-    # Find or Create User
+    # 4. Find or Create User (AND SAVE TOKEN)
     user = db.query(models.User).filter(models.User.email == primary_email).first()
+    
     if not user:
-        # Note: OAuth users start without a username/full_name. 
-        # You could optionally fetch these from GitHub's /user endpoint if desired.
-        user = models.User(email=primary_email, hashed_password="oauth", is_active=True)
+        user = models.User(
+            email=primary_email, 
+            hashed_password="oauth", 
+            is_active=True,
+            avatar_url=avatar_url,          # Save Avatar
+            github_access_token=access_token # Save Token
+        )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+    else:
+        # Update token if user exists (it rotates)
+        user.github_access_token = access_token
+        user.avatar_url = avatar_url
+            
+    db.commit()
+    db.refresh(user)
 
-    access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
-    frontend_url = f"http://localhost:3000/auth/callback?token={access_token}"
+    # 5. Redirect to Dashboard
+    jwt_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    # Make sure this matches your frontend port (3000)
+    frontend_url = f"http://localhost:3000/auth/callback?token={jwt_token}"
     return RedirectResponse(url=frontend_url)
 
 @router.get("/login/google")

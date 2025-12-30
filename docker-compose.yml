@@ -3,24 +3,30 @@ version: '3.8'
 services:
   backend:
     build: 
-      context: .
-      dockerfile: ./backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: vylos-backend
     restart: always
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - ./backend/.env
     depends_on:
       - db
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:rw
       - ./projects:/app/projects
     environment:
-      # This is the path on your Windows machine (D:/projects/vylos/projects)
-      - HOST_PROJECTS_PATH=D:/projects/vylos/projects
+      # Database connection within Docker network
+      - POSTGRES_HOST=db
+      # Path for deployments
+      - HOST_PROJECTS_PATH=${PWD}/projects
+      - DOCKER_HOST=unix:///var/run/docker.sock
     networks:
       - vylos_network
+    # Grant Docker socket access
+    user: root
+    privileged: true
 
   db:
     image: postgres:15-alpine

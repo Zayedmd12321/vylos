@@ -1,28 +1,53 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime
-from sqlalchemy.orm import relationship, Mapped, mapped_column
-from sqlalchemy.sql import func
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+from datetime import datetime
 from database import Base
 
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    email: Mapped[str] = mapped_column(String, unique=True, index=True)
-    username: Mapped[str | None] = mapped_column(String, unique=True, index=True, nullable=True)
-    full_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    hashed_password: Mapped[str] = mapped_column(String)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    projects: Mapped[list["Project"]] = relationship("Project", back_populates="owner")
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=True)
+    full_name = Column(String, nullable=True)
+    hashed_password = Column(String)
+    is_active = Column(Boolean, default=True)
+    
+    github_access_token = Column(String, nullable=True)
+    avatar_url = Column(String, nullable=True)
+
+    projects = relationship("Project", back_populates="owner")
 
 class Project(Base):
     __tablename__ = "projects"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String, unique=True, index=True)
-    git_url: Mapped[str] = mapped_column(String)
-    domain: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
-    status: Mapped[str] = mapped_column(String, default="Pending")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)          
+    description = Column(String, nullable=True)
+    framework = Column(String)
+    status = Column(String, default="Queued")  # Live, Building, Failed, Queued
+    
+    # GitHub Integration details
+    repo_url = Column(String)
+    branch = Column(String, default="main")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_deployed_at = Column(DateTime, nullable=True)
+    
+    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner = relationship("User", back_populates="projects")
+    deployments = relationship("Deployment", back_populates="project")
 
-    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
-    owner: Mapped["User"] = relationship("User", back_populates="projects")
+class Deployment(Base):
+    __tablename__ = "deployments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    status = Column(String)  # Success, Failure, In Progress
+    commit_message = Column(String, nullable=True)
+    commit_hash = Column(String, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    project = relationship("Project", back_populates="deployments")

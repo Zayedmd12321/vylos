@@ -16,6 +16,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - ./projects:/app/projects
+      - ./nginx-configs:/app/nginx-configs
     environment:
       # Database connection within Docker network
       - POSTGRES_HOST=db
@@ -50,6 +51,7 @@ services:
     volumes:
       - ./projects:/var/www/html
       - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx-configs:/etc/nginx/conf.d
     networks:
       - vylos_network
 

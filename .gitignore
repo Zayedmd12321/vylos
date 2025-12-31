@@ -9,3 +9,4 @@ dist/
 *.pyc
 my_db_data
 projects/
+nginx-configs/*.conf

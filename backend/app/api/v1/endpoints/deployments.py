@@ -31,13 +31,12 @@ async def deploy_project(
     Returns:
         Deployment status
     """
-    # Check if project name is available
+    # Check if project name is available (single query)
     user_id = getattr(current_user, 'id')
-    ProjectService.check_project_ownership(
-        project_name=request.project_id,
-        user_id=user_id,
-        db=db
-    )
+    existing_project = db.query(models.Project).filter(
+        models.Project.name == request.project_id,
+        models.Project.owner_id == user_id
+    ).first()
     
     # Start deployment in background
     deployment_service = DeploymentService()

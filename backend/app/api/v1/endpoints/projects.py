@@ -81,6 +81,40 @@ def get_project(
     return project
 
 
+@router.get("/name/{project_name}", response_model=schemas.ProjectResponse)
+def get_project_by_name(
+    project_name: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    Get a specific project by name
+    
+    Args:
+        project_name: Project name
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        Project details
+        
+    Raises:
+        HTTPException: If project not found
+    """
+    project = db.query(models.Project).filter(
+        models.Project.name == project_name,
+        models.Project.owner_id == getattr(current_user, 'id')
+    ).first()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    return project
+
+
 @router.get("/{project_id}/logs")
 def get_project_logs(
     project_id: int,

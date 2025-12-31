@@ -37,8 +37,10 @@ def setup_logging():
     
     # Set specific loggers
     logging.getLogger("uvicorn").setLevel(log_level)
-    logging.getLogger("sqlalchemy.engine").setLevel(
-        logging.INFO if settings.DEBUG else logging.WARNING
-    )
+    # Silence SQLAlchemy query logs (only show warnings and errors)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+    # Silence Docker SDK logs
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
     
     return logging.getLogger(__name__)

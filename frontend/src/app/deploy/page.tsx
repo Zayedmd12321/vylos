@@ -19,6 +19,7 @@ import {
   Activity
 } from "lucide-react";
 import { DottedGlowBackground } from "@/components/ui/DottedGlowBackground";
+import  { Navbar } from "@/components/layout/Navbar";
 
 interface DeploymentLog {
   timestamp: string;
@@ -177,7 +178,7 @@ export default function DeployPage() {
       
       // Connect to SSE for real-time logs
       const token = Cookies.get("token");
-      const sseUrl = `http://localhost:8000/api/v1/logs/stream/${projectId}?token=${token}`;
+      const sseUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/v1/logs/stream/${projectId}?token=${token}`;
       
       addLog("📡 Connecting to build stream...", "info");
       
@@ -219,7 +220,8 @@ export default function DeployPage() {
             setIsDeploying(false);
             eventSource.close();
           } else if (eventData.type === 'timeout') {
-            addLog("⏱️ Deployment timeout", "error");
+            addLog("⏱️ Deployment is taking longer than expected (15 min limit)", "error");
+            addLog("💡 Tip: Check your dashboard - the deployment might still complete", "info");
             setDeploymentStatus("failed");
             setIsDeploying(false);
             eventSource.close();
@@ -236,17 +238,17 @@ export default function DeployPage() {
       
       eventSource.onerror = (error) => {
         console.error("SSE error:", error);
-        addLog("❌ Lost connection to build stream", "error");
-        eventSource.close();
         
         // Don't immediately fail - the build might still be running
         setTimeout(() => {
           if (deploymentStatus === "deploying") {
-            addLog("⚠️ Connection lost, but build may still be running. Check dashboard.", "error");
+            addLog("⚠️ Connection interrupted, but deployment may still be running", "error");
+            addLog("💡 Check your dashboard in a moment to see the final status", "info");
             setIsDeploying(false);
             setDeploymentStatus("failed");
+            eventSource.close();
           }
-        }, 2000);
+        }, 3000);
       };
       
     } catch (error: any) {
@@ -285,22 +287,7 @@ export default function DeployPage() {
     <div className="min-h-screen bg-black text-white">
       <DottedGlowBackground dotColor="rgba(100, 100, 100, 0.15)" glowColor="rgba(100, 100, 255, 0.4)" />
       
-      {/* Navbar */}
-      <nav className="fixed top-0 w-full z-50 border-b border-white/8 bg-black/60 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex justify-between items-center">
-          <button 
-            onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
-          >
-            <ArrowLeft size={20} />
-            <span className="font-medium">Back to Dashboard</span>
-          </button>
-          <span className="font-bold text-xl tracking-tighter flex items-center gap-2">
-            <div className="w-3 h-3 bg-indigo-500 rounded-sm rotate-45" />
-            Vylos
-          </span>
-        </div>
-      </nav>
+      <Navbar />
 
       <main className="relative z-10 pt-28 px-6 max-w-6xl mx-auto pb-20">
         {/* Header */}
@@ -324,7 +311,7 @@ export default function DeployPage() {
               <form onSubmit={handleDeploy} className="space-y-5">
                 {/* Git URL */}
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2 flex items-center gap-2">
+                  <label className="text-sm font-medium text-zinc-300 mb-2 flex items-center gap-2">
                     <Github size={16} />
                     Git Repository URL
                   </label>
@@ -341,7 +328,7 @@ export default function DeployPage() {
 
                 {/* Project ID */}
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2 flex items-center gap-2">
+                  <label className="text-sm font-medium text-zinc-300 mb-2 flex items-center gap-2">
                     <Terminal size={16} />
                     Project Name
                   </label>
@@ -359,7 +346,7 @@ export default function DeployPage() {
 
                 {/* Branch */}
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2 flex items-center gap-2">
+                  <label className="text-sm font-medium text-zinc-300 mb-2 flex items-center gap-2">
                     <GitBranch size={16} />
                     Branch
                   </label>
@@ -509,14 +496,14 @@ export default function DeployPage() {
                 <div className="bg-black/30 rounded-lg p-4 border border-emerald-500/20">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-emerald-400 min-w-0">
-                      <Globe size={18} className="flex-shrink-0" />
+                      <Globe size={18} className="shrink-0" />
                       <span className="font-mono text-sm truncate">{deployedUrl}</span>
                     </div>
                     <a
                       href={deployedUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition-colors flex-shrink-0"
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition-colors shrink-0"
                     >
                       Visit Site
                       <ExternalLink size={16} />

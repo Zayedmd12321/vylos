@@ -58,30 +58,6 @@ class Project(Base):
     
     # Relationships
     owner = relationship("User", back_populates="projects")
-    deployments = relationship("Deployment", back_populates="project", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Project(id={self.id}, name={self.name}, status={self.status})>"
-
-
-class Deployment(Base):
-    """Deployment history model"""
-    __tablename__ = "deployments"
-
-    id = Column(Integer, primary_key=True, index=True)
-    status = Column(String, nullable=False)  # Success, Failure, In Progress
-    commit_message = Column(String, nullable=True)
-    commit_hash = Column(String, nullable=True)
-    duration_seconds = Column(Integer, nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Foreign keys
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    
-    # Relationships
-    project = relationship("Project", back_populates="deployments")
-
-    def __repr__(self):
-        return f"<Deployment(id={self.id}, status={self.status})>"

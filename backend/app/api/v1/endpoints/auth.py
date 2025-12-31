@@ -149,7 +149,7 @@ async def auth_github_callback(code: str, db: Session = Depends(get_db)):
     jwt_token = AuthService.create_token_for_user(user)
     
     # Redirect to frontend
-    frontend_url = f"http://localhost:3000/auth/callback?token={jwt_token}"
+    frontend_url = f"{settings.FRONTEND_URL}/auth/callback?token={jwt_token}"
     return RedirectResponse(url=frontend_url)
 
 
@@ -167,7 +167,7 @@ async def login_google():
             f"?client_id={settings.GOOGLE_CLIENT_ID}"
             f"&response_type=code"
             f"&scope=openid%20email%20profile"
-            f"&redirect_uri=http://localhost:8000/auth/google/callback"
+            f"&redirect_uri={settings.BACKEND_URL}/api/v1/auth/google/callback"
             f"&state=random_state_string"
         )
     }
@@ -194,7 +194,7 @@ async def auth_google_callback(code: str, db: Session = Depends(get_db)):
                 "client_secret": settings.GOOGLE_CLIENT_SECRET,
                 "code": code,
                 "grant_type": "authorization_code",
-                "redirect_uri": "http://localhost:8000/auth/google/callback",
+                "redirect_uri": f"{settings.BACKEND_URL}/api/v1/auth/google/callback",
             },
         )
         token_data = token_res.json()
@@ -232,5 +232,5 @@ async def auth_google_callback(code: str, db: Session = Depends(get_db)):
     jwt_token = AuthService.create_token_for_user(user)
     
     # Redirect to frontend
-    frontend_url = f"http://localhost:3000/auth/callback?token={jwt_token}"
+    frontend_url = f"{settings.FRONTEND_URL}/auth/callback?token={jwt_token}"
     return RedirectResponse(url=frontend_url)

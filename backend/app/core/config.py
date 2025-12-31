@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # CORS Settings
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8000"]
 
+    # Frontend and Backend URLs
+    FRONTEND_URL: str = "http://localhost:3000"
+    BACKEND_URL: str = "http://localhost:8000"
+    DOMAIN_SUFFIX: str = ".localhost"
+
     # GitHub OAuth Settings
     GITHUB_CLIENT_ID: str = "your_github_client_id_here"
     GITHUB_CLIENT_SECRET: str = "your_github_client_secret_here"

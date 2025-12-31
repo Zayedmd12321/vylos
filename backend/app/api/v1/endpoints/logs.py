@@ -21,25 +21,28 @@ async def log_stream(project_name: str, user_id: int, db: Session) -> AsyncGener
     """
     deployment_service = DeploymentService()
     last_position = 0
-    max_retries = 120  # 120 * 2 seconds = 4 minutes max
+    max_retries = 450  # 450 * 2 seconds = 15 minutes max
     retries = 0
+    
+    # Query project once at the start
+    project = db.query(models.Project).filter(
+        models.Project.name == project_name,
+        models.Project.owner_id == user_id
+    ).first()
+    
+    if not project:
+        yield f"data: {json.dumps({'type': 'error', 'message': 'Project not found'})}\n\n"
+        return
     
     # Send initial connection success
     yield f"data: {json.dumps({'type': 'connected', 'message': 'Stream connected'})}\n\n"
     
+    # Get initial status
+    last_status = project.status
+    
     while retries < max_retries:
         try:
-            # Get project from database
-            project = db.query(models.Project).filter(
-                models.Project.name == project_name,
-                models.Project.owner_id == user_id
-            ).first()
-            
-            if not project:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Project not found'})}\n\n"
-                break
-            
-            # Get logs from memory cache
+            # Get logs from memory cache (no DB query)
             logs = deployment_service.get_logs(project_name)
             
             # Send new logs
@@ -48,31 +51,35 @@ async def log_stream(project_name: str, user_id: int, db: Session) -> AsyncGener
                     yield f"data: {json.dumps({'type': 'log', 'message': log})}\n\n"
                 last_position = len(logs)
             
-            # Send status update
-            status_data = {
-                'type': 'status',
-                'status': project.status,
-                'domain': project.domain
-            }
-            yield f"data: {json.dumps(status_data)}\n\n"
+            # Get status from memory cache (no DB query)
+            status_cache = deployment_service.get_status(project_name)
+            current_status = status_cache.get('status', 'Building')
+            current_domain = status_cache.get('domain')
+            
+            # Only send status update if changed
+            if current_status != last_status:
+                last_status = current_status
+                status_data = {
+                    'type': 'status',
+                    'status': current_status,
+                    'domain': current_domain
+                }
+                yield f"data: {json.dumps(status_data)}\n\n"
             
             # If deployment finished, send completion and stop
-            if project.status in ['Live', 'Failed']:
+            if current_status in ['Live', 'Failed']:
                 final_data = {
                     'type': 'complete',
-                    'status': project.status,
-                    'domain': project.domain,
-                    'url': f"http://{project.domain}" if project.domain else None
+                    'status': current_status,
+                    'domain': current_domain,
+                    'url': f"http://{current_domain}" if current_domain else None
                 }
                 yield f"data: {json.dumps(final_data)}\n\n"
                 break
             
             # Wait before next check
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
             retries += 1
-            
-            # Refresh database session
-            db.refresh(project)
             
         except Exception as e:
             print(f"Error in log stream: {e}")

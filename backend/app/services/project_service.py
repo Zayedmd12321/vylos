@@ -106,7 +106,9 @@ class ProjectService:
         db: Session,
         project: models.Project,
         status: str,
-        domain: Optional[str] = None
+        domain: Optional[str] = None,
+        build_logs: Optional[str] = None,
+        commit: bool = True
     ) -> models.Project:
         """
         Update project status
@@ -116,6 +118,8 @@ class ProjectService:
             project: Project model
             status: New status
             domain: Optional domain
+            build_logs: Optional build logs
+            commit: Whether to commit immediately (default True)
             
         Returns:
             Updated project model
@@ -123,9 +127,12 @@ class ProjectService:
         setattr(project, 'status', status)
         if domain:
             setattr(project, 'domain', domain)
+        if build_logs:
+            setattr(project, 'build_logs', build_logs)
         
-        db.commit()
-        db.refresh(project)
+        if commit:
+            db.commit()
+            db.refresh(project)
         
         return project
     

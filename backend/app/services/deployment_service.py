@@ -188,34 +188,63 @@ class DeploymentService:
             db.close()
     
     def _deploy_static(self, project_id: str, internal_work_dir: str, host_work_dir: str, db: Session, project):
-        """Deploy static site (React, Vue, HTML)"""
+        """
+        Deploy static site (React, Vue, HTML, etc.)
+        
+        How it works:
+        1. Source code is already cloned to /app (host: ./projects/{project_id}/)
+        2. If package.json exists: npm install && npm run build
+        3. Find build output directory (dist, build, out, or public)
+        4. Move ONLY the built files to /app root, delete source files
+        5. Nginx serves files from /var/www/html/{project_id} (mapped to ./projects/{project_id}/)
+        
+        Result: Static HTML/CSS/JS files at ./projects/{project_id}/index.html (served by nginx)
+        """
         self.add_log(project_id, "⏳ Building static assets...")
         
-        # Build command for static sites
+        # Build and replace source with output - all in the same directory
         build_cmd = (
             f'sh -c "cd /app && '
             f'if [ -f package.json ]; then '
-            f'  npm install && npm run build && '
+            f'  echo \\"📦 Installing dependencies...\\" && '
+            f'  npm install && '
+            f'  echo \\"🔨 Running build...\\" && '
+            f'  npm run build && '
+            f'  echo \\"📂 Looking for build output...\\" && '
+            # Check each possible build output directory
             f'  for dir in dist build out public; do '
             f'    if [ -d \\"$dir\\" ]; then '
-            f'      rm -rf /output/* && cp -r \\"$dir\\"/* /output/ && exit 0; '
+            f'      echo \\"✓ Found build output in $dir\\" && '
+            # Create temp directory, move build output there, clean /app, move output back
+            f'      mkdir -p /tmp/build_output && '
+            f'      cp -r \\"$dir\\"/* /tmp/build_output/ && '
+            f'      find /app -mindepth 1 -maxdepth 1 ! -name \"$dir\" -exec rm -rf {{}} + && '
+            f'      mv /tmp/build_output/* /app/ && '
+            f'      rm -rf /tmp/build_output && '
+            f'      echo \\"✓ Deployed built files to /app root\\" && '
+            f'      ls -la /app && '
+            f'      exit 0; '
             f'    fi; '
             f'  done; '
-            f'  rm -rf /output/* && cp -r ./* /output/; '
+            f'  echo \\"⚠ No standard build directory found (dist/build/out/public)\\" && '
+            f'  echo \\"Using source files as-is\\" && '
+            f'  exit 0; '
             f'else '
-            f'  rm -rf /output/* && cp -r * /output/; '
+            f'  echo \\"📄 No package.json - serving as static HTML\\" && '
+            f'  ls -la /app && '
+            f'  exit 0; '
             f'fi"'
         )
         
+        # Mount only the project directory - build happens in place
         container = self.client.containers.run(
             image="node:20-alpine",
             command=build_cmd,
-            volumes={host_work_dir: {'bind': '/app', 'mode': 'rw'}, 
-                    f"{host_work_dir}_out": {'bind': '/output', 'mode': 'rw'}},
+            volumes={host_work_dir: {'bind': '/app', 'mode': 'rw'}},
             detach=True
         )
         
-        self.add_log(project_id, "✓ Build started...")
+        self.add_log(project_id, "✓ Build container started...")
         
         # Stream logs
         for line in container.logs(stream=True, follow=True):
@@ -228,7 +257,8 @@ class DeploymentService:
         
         if result.get('StatusCode', 1) == 0:
             self.add_log(project_id, "✅ Build completed successfully!")
-            self.add_log(project_id, f"🌐 Deploying to: {project_id}{settings.DOMAIN_SUFFIX}")
+            self.add_log(project_id, f"📁 Static files ready at: ./projects/{project_id}/")
+            self.add_log(project_id, f"🌐 Live at: http://{project_id}{settings.DOMAIN_SUFFIX}")
             
             # Update status cache immediately
             self.update_status(project_id, 'Live', f"{project_id}{settings.DOMAIN_SUFFIX}")
